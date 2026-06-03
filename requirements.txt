@@ -1,5 +1,5 @@
 streamlit
-cnstats
+cn-stats
 pandas
 openpyxl
 requests
