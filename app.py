@@ -27,40 +27,42 @@ indicators = [
 if st.button("🚀 开始向国家统计局获取最新数据"):
     all_data = []
     
-    # 动态计算时间区间：过往3年 + 当年
     current_year = datetime.datetime.now().year # 2026
     start_year = current_year - 3 # 2023
-    
-    # 构造符合 cn-stats 规范的日期字符串，例如 "2023-2026"
-    # 这样国家统计局接口就会精确返回这四年内的所有月度历史数据
-    target_date_str = f"{start_year}-{current_year}" 
     
     # 创建一个进度条和状态提示
     progress_bar = st.progress(0)
     status_text = st.empty()
     
     for i, ind in enumerate(indicators):
-        status_text.text(f"📡 正在拉取: {ind['name']} ({target_date_str})...")
-        try:
-            # 💡 核心修复：传入明确的 datestr 参数
-            df = stats(zbcode=ind['code'], datestr=target_date_str, as_df=True)
+        status_text.text(f"📡 正在拉取: {ind['name']}...")
+        
+        # 💡 策略优化：分年度循环抓取，进一步降低单次被拦截的概率
+        for year in range(start_year, current_year + 1):
+            target_date_str = str(year)
+            try:
+                # 核心防线：用 try-except 包裹请求，防止单次解析失败导致整个程序退出
+                df = stats(zbcode=ind['code'], datestr=target_date_str, as_df=True)
+                
+                if df is not None and not df.empty:
+                    for index, row in df.iterrows():
+                        date_val = str(row.get('查询日期', row.get('时间', '')))
+                        value = row.get('数值', row.get('数据', ''))
+                        all_data.append([ind['name'], ind['code'], date_val, value])
+            except Exception as e:
+                # 如果被拦截报错，不弹红，而是以黄色警告框提示，程序继续运行
+                st.warning(f"⚠️ {ind['name']} ({target_date_str}年) 被统计局防火墙阻截，已自动跳过。错误原因: {e}")
             
-            if df is not None and not df.empty:
-                for index, row in df.iterrows():
-                    # 兼容不同版本 cn-stats 返回的列名
-                    date_val = str(row.get('查询日期', row.get('时间', '')))
-                    value = row.get('数值', row.get('数据', ''))
-                    all_data.append([ind['name'], ind['code'], date_val, value])
-                st.write(f"  ✅ {ind['name']} 成功获取 {len(df)} 条记录")
-            else:
-                st.warning(f"  ⚠️ {ind['name']} 返回了空数据")
-        except Exception as e:
-            st.error(f"❌ 获取 {ind['name']} 时报错: {e}")
+            time.sleep(2.5) # 每个小请求休眠 2.5 秒，温柔对待统计局服务器
             
-        time.sleep(2.0) # 维持 2 秒休眠，这是在云端高成功率越过统计局防火墙的关键
+        # 汇报当前指标的整体完成情况
+        ind_count = len([x for x in all_data if x[0] == ind['name']])
+        if ind_count > 0:
+            st.write(f"  ✅ {ind['name']} 获取成功，共 {ind_count} 条月度数据")
+            
         progress_bar.progress((i + 1) / len(indicators))
         
-    status_text.text("✅ 数据获取完成！正在打包 Excel...")
+    status_text.text("✅ 数据拉取流程结束，正在打包 Excel...")
     
     if all_data:
         # 将数据转换为 DataFrame 并按照指标名和时间倒序排序
@@ -73,14 +75,14 @@ if st.button("🚀 开始向国家统计局获取最新数据"):
             result_df.to_excel(writer, index=False, sheet_name='宏观数据一览')
         excel_data = output.getvalue()
         
-        st.success(f"🎉 全部核心指标拉取成功！共筛选出 {len(all_data)} 条月度历史记录。")
+        st.success(f"🎉 任务完成！成功为您抢救回 {len(all_data)} 条有效数据记录。")
         
         # 显示下载按钮
         st.download_button(
-            label="📥 点击这里下载完整的 Excel 数据表",
+            label="📥 点击这里下载已获取到的 Excel 数据表",
             data=excel_data,
-            file_name=f"中国宏观经济核心数据_{target_date_str}.xlsx",
+            file_name=f"中国宏观经济核心数据_{start_year}-{current_year}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.error("⚠️ 未能获取到任何有效数据，请检查运行日志。")
+        st.error("❌ 非常遗憾，本次所有尝试均被统计局防火墙全面拦截（返回了空页面）。请几分钟后再次点击按钮重试，或尝试刷新网页更换云端节点 IP。")
