@@ -1,0 +1,4 @@
+streamlit
+cn-stats==1.2.0
+pandas
+openpyxl
